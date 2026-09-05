@@ -230,16 +230,24 @@ jobs:
     container: debian:11-slim
 
     steps:
-      - name: Install dependencies
-        run: |
-          dpkg --add-architecture i386
-          apt-get update
-          apt-get install -y \
-            gcc-multilib g++-multilib \
-            build-essential \
-            libc6-dev libc6-dev-i386 \
-            git cmake rsync \
-            g++ gcc
+      - name: Fix apt sources and install dependencies
+  run: |
+    # Switch to archive.debian.org for oldstable packages
+    cat > /etc/apt/sources.list << EOF
+    deb http://archive.debian.org/debian bullseye main contrib non-free
+    deb http://archive.debian.org/debian bullseye-updates main contrib non-free
+    deb http://archive.debian.org/debian-security bullseye-security main contrib non-free
+    EOF
+    
+    apt-get update -o Acquire::Check-Valid-Until=false
+    dpkg --add-architecture i386
+    apt-get update -o Acquire::Check-Valid-Until=false
+    apt-get install -y \
+      gcc-multilib g++-multilib \
+      build-essential \
+      libc6-dev libc6-dev-i386 \
+      git cmake rsync \
+      g++ gcc
 
       - name: Configure
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
