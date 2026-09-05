@@ -776,6 +776,12 @@ void SV_RunCmd(usercmd_t* ucmd, int random_seed, qboolean fNetCmd, qboolean fCho
 	trace_t trace;
 	float frametime;
 
+#ifdef REHLDS_FIXES
+	// client could disconnect during CheckLimits or game-DLL callbacks
+	if (!host_client->connected)
+		return;
+#endif // REHLDS_FIXES
+
 	if (host_client->ignorecmdtime > realtime)
 	{
 		host_client->cmdtime = (double)ucmd->msec / 1000.0 + host_client->cmdtime;
@@ -1221,131 +1227,6 @@ entity_state_t *SV_FindEntInPack(int index, packet_entities_t *pack)
 	return NULL;
 }
 
-#ifdef REHLDS_FIXES
-// Lag compensation: save current animation/hitbox state before rewind
-static void SV_LagCompSaveAnimState(edict_t *ent, sv_adjusted_positions_t *pos)
-{
-	if (pos->anim_saved)
-		return;
-
-	pos->oldsequence = ent->v.sequence;
-	pos->oldframe = ent->v.frame;
-	pos->oldangles[0] = ent->v.angles[0];
-	pos->oldangles[1] = ent->v.angles[1];
-	pos->oldangles[2] = ent->v.angles[2];
-	Q_memcpy(pos->oldblending, ent->v.blending, sizeof(pos->oldblending));
-	Q_memcpy(pos->oldcontroller, ent->v.controller, sizeof(pos->oldcontroller));
-	pos->oldusehull = (ent->v.flags & FL_DUCKING) ? 1 : 0;
-	pos->oldmins[0] = ent->v.mins[0];
-	pos->oldmins[1] = ent->v.mins[1];
-	pos->oldmins[2] = ent->v.mins[2];
-	pos->oldmaxs[0] = ent->v.maxs[0];
-	pos->oldmaxs[1] = ent->v.maxs[1];
-	pos->oldmaxs[2] = ent->v.maxs[2];
-	pos->oldflags = ent->v.flags;
-	pos->anim_saved = 1;
-}
-
-static void SV_LagCompApplyHullFromUsehull(edict_t *ent, int usehull)
-{
-	int hull = usehull ? 1 : 0;
-
-	ent->v.mins[0] = player_mins[hull][0];
-	ent->v.mins[1] = player_mins[hull][1];
-	ent->v.mins[2] = player_mins[hull][2];
-	ent->v.maxs[0] = player_maxs[hull][0];
-	ent->v.maxs[1] = player_maxs[hull][1];
-	ent->v.maxs[2] = player_maxs[hull][2];
-
-	if (usehull)
-		ent->v.flags |= FL_DUCKING;
-	else
-		ent->v.flags &= ~FL_DUCKING;
-}
-
-// Interpolate animation state from entity history snapshots for hitbox-accurate lag comp
-static void SV_LagCompApplyAnimState(edict_t *ent, sv_adjusted_positions_t *pos, entity_state_t *state, entity_state_t *prevstate, float frac)
-{
-	SV_LagCompSaveAnimState(ent, pos);
-
-	if (prevstate)
-	{
-		vec3_t delta;
-
-		delta[0] = prevstate->angles[0] - state->angles[0];
-		delta[1] = prevstate->angles[1] - state->angles[1];
-		delta[2] = prevstate->angles[2] - state->angles[2];
-		VectorMA(state->angles, frac, delta, pos->newangles);
-
-		pos->newframe = state->frame + frac * (prevstate->frame - state->frame);
-		pos->newsequence = (frac >= 0.5f && prevstate->sequence != state->sequence) ? prevstate->sequence : state->sequence;
-
-		for (int b = 0; b < 4; b++)
-		{
-			pos->newblending[b] = (byte)(state->blending[b] + frac * (prevstate->blending[b] - state->blending[b]));
-			pos->newcontroller[b] = (byte)(state->controller[b] + frac * (prevstate->controller[b] - state->controller[b]));
-		}
-
-		pos->newusehull = (frac >= 0.5f) ? prevstate->usehull : state->usehull;
-	}
-	else
-	{
-		pos->newangles[0] = state->angles[0];
-		pos->newangles[1] = state->angles[1];
-		pos->newangles[2] = state->angles[2];
-		pos->newframe = state->frame;
-		pos->newsequence = state->sequence;
-		Q_memcpy(pos->newblending, state->blending, sizeof(pos->newblending));
-		Q_memcpy(pos->newcontroller, state->controller, sizeof(pos->newcontroller));
-		pos->newusehull = state->usehull;
-	}
-
-	ent->v.sequence = pos->newsequence;
-	ent->v.frame = pos->newframe;
-	ent->v.angles[0] = pos->newangles[0];
-	ent->v.angles[1] = pos->newangles[1];
-	ent->v.angles[2] = pos->newangles[2];
-	Q_memcpy(ent->v.blending, pos->newblending, sizeof(ent->v.blending));
-	Q_memcpy(ent->v.controller, pos->newcontroller, sizeof(ent->v.controller));
-
-	SV_LagCompApplyHullFromUsehull(ent, pos->newusehull);
-
-	pos->newmins[0] = ent->v.mins[0];
-	pos->newmins[1] = ent->v.mins[1];
-	pos->newmins[2] = ent->v.mins[2];
-	pos->newmaxs[0] = ent->v.maxs[0];
-	pos->newmaxs[1] = ent->v.maxs[1];
-	pos->newmaxs[2] = ent->v.maxs[2];
-	pos->newflags = ent->v.flags;
-
-	R_FlushStudioCache();
-}
-
-static void SV_LagCompRestoreAnimState(edict_t *ent, sv_adjusted_positions_t *pos)
-{
-	if (!pos->anim_saved)
-		return;
-
-	ent->v.sequence = pos->oldsequence;
-	ent->v.frame = pos->oldframe;
-	ent->v.angles[0] = pos->oldangles[0];
-	ent->v.angles[1] = pos->oldangles[1];
-	ent->v.angles[2] = pos->oldangles[2];
-	Q_memcpy(ent->v.blending, pos->oldblending, sizeof(ent->v.blending));
-	Q_memcpy(ent->v.controller, pos->oldcontroller, sizeof(ent->v.controller));
-	ent->v.mins[0] = pos->oldmins[0];
-	ent->v.mins[1] = pos->oldmins[1];
-	ent->v.mins[2] = pos->oldmins[2];
-	ent->v.maxs[0] = pos->oldmaxs[0];
-	ent->v.maxs[1] = pos->oldmaxs[1];
-	ent->v.maxs[2] = pos->oldmaxs[2];
-	ent->v.flags = pos->oldflags;
-
-	pos->anim_saved = 0;
-	R_FlushStudioCache();
-}
-#endif // REHLDS_FIXES
-
 void SV_SetupMove(client_t *_host_client)
 {
 	struct client_s *cl;
@@ -1564,16 +1445,6 @@ void SV_SetupMove(client_t *_host_client)
 			SV_LinkEdict(cl->edict, FALSE);
 			pos->needrelink = 1;
 		}
-
-#ifdef REHLDS_FIXES
-		// Rewind animation/hitbox state to match historical snapshot (fixes bullet swallow on duck/reload/etc.)
-		SV_LagCompApplyAnimState(cl->edict, pos, state, pnextstate, frac);
-		if (pos->anim_saved)
-		{
-			SV_LinkEdict(cl->edict, FALSE);
-			pos->needrelink = 1;
-		}
-#endif
 	}
 }
 
@@ -1621,10 +1492,6 @@ void SV_RestoreMove(client_t *_host_client)
 			cli->edict->v.origin[2] = pos->oldorg[2];
 			SV_LinkEdict(cli->edict, FALSE);
 		}
-
-#ifdef REHLDS_FIXES
-		SV_LagCompRestoreAnimState(cli->edict, pos);
-#endif
 	}
 }
 
@@ -1869,6 +1736,10 @@ void SV_ParseMove(client_t *pSenderClient)
 	}
 
 #ifdef REHLDS_FIXES
+	// skip if client dropped while executing commands
+	if (!host_client->connected)
+		return;
+
 	if (numcmds)
 		host_client->lastcmd = cmds[numcmds - 1];
 	else if (numbackup)
