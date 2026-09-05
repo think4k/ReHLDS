@@ -36,6 +36,7 @@ linux:
         fetch-depth: 0
 
     - name: GPG Import
+      shell: bash
       run: |
         echo "${{ secrets.PUB_ASC }}" > "${{ secrets.PUB_ASC_FILE }}"
         echo "${{ secrets.KEY_ASC }}" > "${{ secrets.KEY_ASC_FILE }}"
@@ -75,10 +76,10 @@ linux:
 
         #export for global use
         echo "GPG_LINUX_FINGERPRINT=$GPG_LINUX_FINGERPRINT" >> $GITHUB_ENV
-      shell: bash
       if: github.event_name != 'pull_request'
 
     - name: Build and Run unittests
+      shell: bash
       run: |
         rm -rf build && cmake -DCMAKE_BUILD_TYPE=Unittests -B build && cmake --build build -j8
         retVal=0
@@ -96,17 +97,18 @@ linux:
 
         if [ $retVal -ne 0 ] && [ $retVal -ne 3 ]; then
           echo -e "\e[30;41mExit code: $retVal\e[0m"
-          exit 1 # Unittest failed
+          exit 1
         else
           echo -e "\e[30;43mExit code: $retVal\e[0m"
         fi
-      shell: bash
 
     - name: Build using GCC Compiler
+      shell: bash
       run: |
         rm -rf build && cmake -B build && cmake --build build -j8
 
     - name: Prepare HLSDK
+      shell: bash
       run: |
         mkdir -p publish/hlsdk
         rsync -a rehlds/common/ publish/hlsdk/common/
@@ -116,6 +118,7 @@ linux:
         rsync -a rehlds/public/rehlds/ publish/hlsdk/engine
 
     - name: Move files
+      shell: bash
       run: |
         mkdir -p publish/bin/linux32/valve/dlls		  
         
@@ -130,6 +133,7 @@ linux:
         mv build/rehlds/filesystem/FileSystem_Stdio/filesystem_stdio.so publish/bin/linux32/filesystem_stdio.so
 
     - name: Run GLIBC/ABI version compat test
+      shell: bash
       run: |
         binaries=(
           "publish/bin/linux32/engine_i486.so"
@@ -143,9 +147,8 @@ linux:
         )
         bash ./rehlds/version/glibc_test.sh ${binaries[@]}
         if [[ $? -ne 0 ]]; then
-          exit 1 # Assertion failed
+          exit 1
         fi
-      shell: bash
 
     - name: Deploy artifacts
       uses: actions/upload-artifact@v4
