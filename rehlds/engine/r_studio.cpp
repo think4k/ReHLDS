@@ -782,11 +782,31 @@ hull_t *SV_HullForStudioModel(const edict_t *pEdict, const vec_t *mins, const ve
 			angles[1] = pEdict->v.angles[1];
 			angles[2] = pEdict->v.angles[2];
 
-			int iBlend;
-			R_StudioPlayerBlend(pseqdesc, &iBlend, angles);
+			unsigned char blending[2];
+			unsigned char controller[4];
 
-			unsigned char blending[2] = { (unsigned char)iBlend, 0 };
-			unsigned char controller[4] = { 0x7F, 0x7F, 0x7F, 0x7F };
+#ifdef REHLDS_FIXES
+			// Use networked entity blending for single/two-way sequences (reload, duck, plant C4).
+			// R_StudioPlayerBlend is only valid for nine-way movement sequences.
+			if (pseqdesc->numblends != 9)
+			{
+				blending[0] = (unsigned char)pEdict->v.blending[0];
+				blending[1] = (unsigned char)pEdict->v.blending[1];
+				Q_memcpy(controller, pEdict->v.controller, sizeof(controller));
+			}
+			else
+#endif
+			{
+				int iBlend;
+				R_StudioPlayerBlend(pseqdesc, &iBlend, angles);
+				blending[0] = (unsigned char)iBlend;
+				blending[1] = 0;
+				controller[0] = 0x7F;
+				controller[1] = 0x7F;
+				controller[2] = 0x7F;
+				controller[3] = 0x7F;
+			}
+
 			return R_StudioHull(
 				g_psv.models[pEdict->v.modelindex],
 				pEdict->v.frame,
