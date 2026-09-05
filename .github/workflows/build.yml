@@ -231,15 +231,24 @@ jobs:
 
     steps:
       - name: Install dependencies
-        run: |
-          dpkg --add-architecture i386
-          apt-get update
-          apt-get install -y \
-            gcc-multilib g++-multilib \
-            build-essential \
-            libc6-dev libc6-dev-i386 \
-            git cmake rsync \
-            g++ gcc
+  run: |
+    # Update sources for Debian 11
+    cat > /etc/apt/sources.list << EOF
+    deb http://deb.debian.org/debian bullseye main contrib non-free
+    deb http://deb.debian.org/debian bullseye-updates main contrib non-free
+    deb http://deb.debian.org/debian-security bullseye-security main contrib non-free
+    EOF
+    
+    dpkg --add-architecture i386
+    apt-get update --allow-releaseinfo-change || apt-get update --fix-missing
+    apt-get install -y \
+      gcc-multilib g++-multilib \
+      build-essential \
+      libc6-dev libc6-dev-i386 \
+      git cmake rsync \
+      g++ gcc \
+      gnupg2
+    apt-get install -f  # Fix any broken dependencies
 
       - name: Configure
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
