@@ -560,6 +560,9 @@ jobs:
         run: |
           set -e
 
+          PUB_FILE="$RUNNER_TEMP/rehlds-public.asc"
+          KEY_FILE="$RUNNER_TEMP/rehlds-private.asc"
+
           echo "${{ secrets.PUB_ASC }}" > "${{ secrets.PUB_ASC_FILE }}"
           echo "${{ secrets.KEY_ASC }}" > "${{ secrets.KEY_ASC_FILE }}"
 
